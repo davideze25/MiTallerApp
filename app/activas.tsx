@@ -89,7 +89,7 @@ export default function OrdenesActivasScreen() {
     const equipo = ordenSeleccionada.equipos;
     const idOrden = ordenSeleccionada.id;
 
-  const urlAprobacion = `https://mi-taller-app-beta.vercel.app/${idOrden}`; // <--- LINK DINÁMICO
+  const urlAprobacion = `https://mi-taller-app-beta.vercel.app/orden/${idOrden}`; // <--- LINK DINÁMICO
 
   //const mensaje = `Hola, el diagnóstico está listo. Revísalo y autoriza aquí:\n${urlAprobacion}`;
 
