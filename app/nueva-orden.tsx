@@ -180,6 +180,7 @@ export default function NuevaOrdenScreen() {
     <ScrollView style={styles.container}>
       <Text style={styles.title}>📋 Recepción de Equipo</Text>
 
+    
       <View style={styles.section}>
         <View style={styles.row}>
           <Text style={styles.label}>DATOS DEL DUEÑO</Text>
@@ -187,17 +188,57 @@ export default function NuevaOrdenScreen() {
             <Text style={styles.addBtnText}>+ NUEVO</Text>
           </TouchableOpacity>
         </View>
-        <TextInput style={styles.input} placeholder="🔍 Teléfono (Buscar...)" value={telefono} onChangeText={buscarCliente} keyboardType="phone-pad" />
+
+        {/* BUSCADOR POR TELÉFONO */}
+        <TextInput 
+          style={styles.input} 
+          placeholder="🔍 Teléfono (Buscar...)" 
+          value={telefono} 
+          onChangeText={buscarCliente} 
+          keyboardType="phone-pad" 
+        />
+
+        {/* SUGERENCIAS DE CLIENTES */}
         {sugerencias.map((c) => (
           <TouchableOpacity key={c.id} style={styles.suggestion} onPress={() => seleccionarCliente(c)}>
             <Text style={styles.suggestionName}>{c.nombre}</Text>
             <Text style={styles.suggestionPhone}>📞 {c.telefono}</Text>
           </TouchableOpacity>
         ))}
-        <TextInput style={[styles.input, clienteIdExistente && styles.inputDisabled]} placeholder="👤 Nombre" value={nombre} onChangeText={setNombre} editable={!clienteIdExistente} />
+
+        {/* NOMBRE */}
+        <TextInput 
+          style={[styles.input, clienteIdExistente && styles.inputDisabled]} 
+          placeholder="👤 Nombre" 
+          value={nombre} 
+          onChangeText={setNombre} 
+          editable={!clienteIdExistente} 
+        />
+
+        <TextInput 
+          style={[styles.input, clienteIdExistente && styles.inputDisabled]} 
+          placeholder="📧 Correo Electrónico" 
+          value={email} 
+          onChangeText={setEmail} 
+          keyboardType="email-address"
+          editable={!clienteIdExistente} 
+        />
+
+        <TextInput 
+          style={[styles.input, clienteIdExistente && styles.inputDisabled]} 
+          placeholder="📍 Dirección / Ubicación" 
+          value={direccion} 
+          onChangeText={setDireccion} 
+          editable={!clienteIdExistente} 
+        />
+
+        {/* BOTÓN PARA RESETEAR CLIENTE SI SE SELECCIONÓ UNO MAL */}
         {clienteIdExistente && (
-          <TouchableOpacity onPress={() => {setClienteIdExistente(null); setNombre(''); setTelefono(''); setDireccion(''); setEmail('');}}>
-            <Text style={styles.resetText}>✕ Cambiar Cliente</Text>
+          <TouchableOpacity onPress={() => {
+            setClienteIdExistente(null); 
+            setNombre(''); setTelefono(''); setDireccion(''); setEmail('');
+          }}>
+            <Text style={styles.resetText}>✕ Cambiar Cliente / Editar Datos</Text>
           </TouchableOpacity>
         )}
       </View>
