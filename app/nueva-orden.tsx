@@ -1,9 +1,9 @@
-import AsyncStorage from '@react-native-async-storage/async-storage'; // Importamos AsyncStorage
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { decode } from 'base64-arraybuffer';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Alert, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { supabase } from '../supabase';
 
 export default function NuevaOrdenScreen() {
@@ -71,15 +71,28 @@ export default function NuevaOrdenScreen() {
     guardarBorrador();
   }, [nombre, telefono, direccion, email, identificador, marca, falla, medicion, clienteIdExistente]);
 
+  // --- 3. FUNCIÓN WHATSAPP DE RECEPCIÓN (MOVIDA Y MEJORADA) ---
+  const enviarWhatsAppDeRecepcion = (clienteNombre: string, clienteTel: string, equipoMarca: string, ordenId: string) => {
+    const urlAprobacion = `https://mi-taller-app-beta.vercel.app{ordenId}`;
+    const mensaje = `Hola *${clienteNombre}* 👋, hemos recibido su *${equipoMarca}* con éxito.\n\n` +
+      `*Orden:* #${ordenId.slice(0, 8)}\n` +
+      `*Falla:* ${falla}\n\n` +
+      `Puede seguir el estatus de su reparación aquí:\n${urlAprobacion}\n\n` +
+      `*MiTallerApp* 🛠️`;
 
-  // --- FUNCIÓN PARA TOMAR FOTO (OPTIMIZADA) ---
+    const telLimpio = clienteTel.replace(/\D/g, '');
+    const telFinal = telLimpio.length === 10 ? `52${telLimpio}` : telLimpio; // Asume México si son 10 dígitos
+    Linking.openURL(`https://wa.me{telFinal}?text=${encodeURIComponent(mensaje)}`);
+  };
+
+  // --- LOGICA DE CÁMARA Y GUARDADO ---
   const tomarFoto = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') return Alert.alert("Error", "Sin acceso a cámara");
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ['images'], 
-      allowsEditing: false, // Desactivado para evitar crash por memoria
-      quality: 0.3,         // Calidad optimizada
+      allowsEditing: false, 
+      quality: 0.3,         
       base64: true,
     });
     if (!result.canceled && result.assets) { 
@@ -90,7 +103,6 @@ export default function NuevaOrdenScreen() {
     }
   };
 
-  // --- FUNCIÓN PARA SUBIR TODA LA GALERÍA ---
   async function subirTodasLasFotos(): Promise<string[]> {
     const urlsPublicas: string[] = [];
     for (const b64 of fotosBase64) {
@@ -98,7 +110,6 @@ export default function NuevaOrdenScreen() {
       const { data, error } = await supabase.storage
         .from('evidencias')
         .upload(fileName, decode(b64), { contentType: 'image/jpeg' });
-      
       if (!error) {
         const { data: urlData } = supabase.storage.from('evidencias').getPublicUrl(fileName);
         urlsPublicas.push(urlData.publicUrl);
@@ -107,16 +118,13 @@ export default function NuevaOrdenScreen() {
     return urlsPublicas;
   }
 
-  // --- BÚSQUEDA DE CLIENTE ---
   async function buscarCliente(text: string) {
     setTelefono(text);
     setClienteIdExistente(null);
     if (text.length > 3) {
       const { data } = await supabase.from('clientes').select('*').ilike('telefono', `%${text}%`).limit(3);
       setSugerencias(data || []);
-    } else {
-      setSugerencias([]);
-    }
+    } else { setSugerencias([]); }
   }
 
   const seleccionarCliente = (c: any) => {
@@ -124,33 +132,26 @@ export default function NuevaOrdenScreen() {
     setEmail(c.email || ''); setClienteIdExistente(c.id); setSugerencias([]);
   };
 
-  // --- GUARDADO FINAL ---
   async function generarTodo() {
     if (!nombre || !telefono || !identificador) {
       return Alert.alert("Faltan datos", "Nombre, Teléfono e ID del Equipo son obligatorios.");
     }
     setCargando(true);
     try {
-      let finalClienteId = clienteIdExistente;
-
-      // 1. SUBIR FOTOS
       const linksDeFotos = await subirTodasLasFotos();
-
-      // 2. CLIENTE (Si es nuevo)
+      let finalClienteId = clienteIdExistente;
       if (!finalClienteId) {
         const { data: nuevoCliente, error: errCliente } = await supabase
           .from('clientes').insert([{ nombre, telefono, direccion, email, empresa_id }]).select().single();
         if (errCliente) throw errCliente;
         finalClienteId = nuevoCliente.id;
       }
-
-      // 3. EQUIPO
       const { data: equipo, error: errEquipo } = await supabase
         .from('equipos').insert([{ identificador, marca, cliente_id: finalClienteId, empresa_id }]).select().single();
       if (errEquipo) throw errEquipo;
 
-      // 4. ORDEN
-      const { error: errOrden } = await supabase
+      // OBTENEMOS EL ID DE LA ORDEN CREADA PARA EL LINK DE WHATSAPP
+      const { data: ordenCreada, error: errOrden } = await supabase
         .from('ordenes').insert([{
           equipo_id: equipo.id,
           medicion_entrada: parseInt(medicion) || 0,
@@ -158,14 +159,17 @@ export default function NuevaOrdenScreen() {
           estatus: 'Abierta',
           empresa_id: empresa_id,
           fotos_recepcion: linksDeFotos
-        }]);
+        }]).select('id').single(); // Solicitamos solo el ID
       if (errOrden) throw errOrden;
       
+      // 4. DISPARAMOS EL WHATSAPP AUTOMÁTICO USANDO EL ID DE LA ORDEN
+      enviarWhatsAppDeRecepcion(nombre, telefono, marca, ordenCreada.id);
+
       // 5. LIMPIAR BORRADOR TRAS ÉXITO
       await AsyncStorage.removeItem('borrador_orden');
 
-      Alert.alert("✅ ¡ORDEN CREADA!", `Se guardaron ${linksDeFotos.length} fotos.`);
-      // Limpiar estados locales para un nuevo formulario
+      Alert.alert("✅ ¡ORDEN CREADA!", `Se guardaron ${linksDeFotos.length} fotos y se envió WA.`);
+      // Limpiar estados locales para un nuevo formulario y navegar
       setNombre(''); setTelefono(''); setIdentificador(''); setMarca(''); setMedicion(''); setFalla('');
       setClienteIdExistente(null); setFotosUris([]); setFotosBase64([]);
       
@@ -180,7 +184,6 @@ export default function NuevaOrdenScreen() {
     <ScrollView style={styles.container}>
       <Text style={styles.title}>📋 Recepción de Equipo</Text>
 
-    
       <View style={styles.section}>
         <View style={styles.row}>
           <Text style={styles.label}>DATOS DEL DUEÑO</Text>
@@ -188,56 +191,18 @@ export default function NuevaOrdenScreen() {
             <Text style={styles.addBtnText}>+ NUEVO</Text>
           </TouchableOpacity>
         </View>
-
-        {/* BUSCADOR POR TELÉFONO */}
-        <TextInput 
-          style={styles.input} 
-          placeholder="🔍 Teléfono (Buscar...)" 
-          value={telefono} 
-          onChangeText={buscarCliente} 
-          keyboardType="phone-pad" 
-        />
-
-        {/* SUGERENCIAS DE CLIENTES */}
+        <TextInput style={styles.input} placeholder="🔍 Teléfono (Buscar...)" value={telefono} onChangeText={buscarCliente} keyboardType="phone-pad" />
         {sugerencias.map((c) => (
           <TouchableOpacity key={c.id} style={styles.suggestion} onPress={() => seleccionarCliente(c)}>
             <Text style={styles.suggestionName}>{c.nombre}</Text>
             <Text style={styles.suggestionPhone}>📞 {c.telefono}</Text>
           </TouchableOpacity>
         ))}
-
-        {/* NOMBRE */}
-        <TextInput 
-          style={[styles.input, clienteIdExistente && styles.inputDisabled]} 
-          placeholder="👤 Nombre" 
-          value={nombre} 
-          onChangeText={setNombre} 
-          editable={!clienteIdExistente} 
-        />
-
-        <TextInput 
-          style={[styles.input, clienteIdExistente && styles.inputDisabled]} 
-          placeholder="📧 Correo Electrónico" 
-          value={email} 
-          onChangeText={setEmail} 
-          keyboardType="email-address"
-          editable={!clienteIdExistente} 
-        />
-
-        <TextInput 
-          style={[styles.input, clienteIdExistente && styles.inputDisabled]} 
-          placeholder="📍 Dirección / Ubicación" 
-          value={direccion} 
-          onChangeText={setDireccion} 
-          editable={!clienteIdExistente} 
-        />
-
-        {/* BOTÓN PARA RESETEAR CLIENTE SI SE SELECCIONÓ UNO MAL */}
+        <TextInput style={[styles.input, clienteIdExistente && styles.inputDisabled]} placeholder="👤 Nombre" value={nombre} onChangeText={setNombre} editable={!clienteIdExistente} />
+        <TextInput style={[styles.input, clienteIdExistente && styles.inputDisabled]} placeholder="📧 Correo Electrónico" value={email} onChangeText={setEmail} keyboardType="email-address" editable={!clienteIdExistente} />
+        <TextInput style={[styles.input, clienteIdExistente && styles.inputDisabled]} placeholder="📍 Dirección / Ubicación" value={direccion} onChangeText={setDireccion} editable={!clienteIdExistente} />
         {clienteIdExistente && (
-          <TouchableOpacity onPress={() => {
-            setClienteIdExistente(null); 
-            setNombre(''); setTelefono(''); setDireccion(''); setEmail('');
-          }}>
+          <TouchableOpacity onPress={() => { setClienteIdExistente(null); setNombre(''); setTelefono(''); setDireccion(''); setEmail(''); }}>
             <Text style={styles.resetText}>✕ Cambiar Cliente / Editar Datos</Text>
           </TouchableOpacity>
         )}
@@ -273,7 +238,7 @@ export default function NuevaOrdenScreen() {
       </View>
 
       <TouchableOpacity style={[styles.btn, cargando && {opacity: 0.5}]} onPress={generarTodo} disabled={cargando}>
-        <Text style={styles.btnText}>{cargando ? "SUBIENDO EVIDENCIAS..." : "CREAR EXPEDIENTE COMPLETO"}</Text>
+        <Text style={styles.btnText}>{cargando ? "SUBIENDO EVIDENCIAS..." : "GUARDAR EXPEDIENTE"}</Text>
       </TouchableOpacity>
     </ScrollView>
   );
