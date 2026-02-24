@@ -68,18 +68,33 @@ export default function NuevaOrdenScreen() {
   }, [nombre, telefono, direccion, email, identificador, marca, falla, medicion, clienteIdExistente]); 
   
   // --- 3. FUNCIÓN WHATSAPP DE RECEPCIÓN (NUEVA FUNCIÓN) ---
-  const enviarWhatsAppDeRecepcion = (clienteNombre: string, clienteTel: string, equipoMarca: string, ordenId: string) => {
-    const urlAprobacion = `https://mi-taller-app-beta.vercel.app/orden/${ordenId}`;    
-    const mensaje = `Hola *${clienteNombre}* 👋, hemos recibido su *${equipoMarca}* con éxito.\n\n` +
-      `*Orden:* #${ordenId.slice(0, 8)}\n` +
-      `*Falla:* ${falla}\n\n` +
-      `Siga su reparación aquí:\n${urlAprobacion}\n\n` +
-      `*MiTallerApp* 🛠️`;
+  // 1. Definición de la función (con los 4 argumentos correctos)
+const enviarWhatsAppDeRecepcion = (nombre: string, telefono: string, marca: string, ordenId: string) => {
+  const ahora = new Date();
+  const hora = ahora.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  
+  // Link Mágico que lleva a la visualización de la orden
+  const linkMagico = `https://mi-taller-app-beta.vercel.app/orden/${ordenId}`;
 
-    const telLimpio = clienteTel.replace(/\D/g, '');
-    const telFinal = telLimpio.length === 10 ? `52${telLimpio}` : telLimpio; // Asume México si son 10 dígitos
-    Linking.openURL(`https://wa.me{telFinal}?text=${encodeURIComponent(mensaje)}`);
-  };
+  // Formato estilo "Ticket Digital"
+  const mensaje = 
+    `✅ *¡REGISTRO EXITOSO!*\n\n` +
+    `¡Hola *${nombre}*! 👋\n\n` +
+    `Tu *${marca.toUpperCase()}* ha sido recepcionado con éxito.\n\n` +
+    `📍 *Detalles de Entrada:*\n` +
+    `• *Hora:* ${hora} hrs\n` +
+    `• *Folio:* #${ordenId.slice(-6).toUpperCase()}\n\n` +
+    `Puedes ver el resumen y fotos de recepción aquí:\n` +
+    `🔗 ${linkMagico}\n\n` +
+    `*¡Gracias por tu confianza!* 🛠️`;
+
+  // Limpieza de número y envío
+  const telLimpio = telefono.replace(/\D/g, '');
+  const telFinal = telLimpio.length === 10 ? `52${telLimpio}` : telLimpio;
+
+  Linking.openURL(`whatsapp://send?text=${encodeURIComponent(mensaje)}&phone=${telFinal}`);
+};
+  
   
   // --- FUNCIÓN PARA TOMAR FOTO (OPTIMIZADA DEL PDF) --- 
   const tomarFoto = async () => { 

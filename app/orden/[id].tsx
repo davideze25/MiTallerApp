@@ -1,4 +1,4 @@
-import { decode } from 'base64-arraybuffer'; // Importación vital para la firma
+import { decode } from 'base64-arraybuffer';
 import { useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -41,40 +41,27 @@ export default function PaginaAutorizacionPublica() {
   }
 
   const handleAutorizar = async () => {
-    // Validar que el canvas no esté vacío
     if (!sigCanvas.current || sigCanvas.current.isEmpty()) {
       return Alert.alert("Firma requerida", "Por favor, firme en el recuadro antes de enviar.");
     }
-
     setEnviando(true);
-    
+
     try {
-      // 1. Obtener la firma del canvas y limpiar el prefijo base64
       const firmaBase64Raw = sigCanvas.current.getTrimmedCanvas().toDataURL('image/png');
       const firmaBase64 = firmaBase64Raw.replace('data:image/png;base64,', '');
-      
-      // 2. Nombre del archivo único
       const fileName = `firma_${id}_${Date.now()}.png`;
 
-      // 3. Subir imagen al Bucket 'firmas'
-      const { data: uploadData, error: uploadError } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
         .from('firmas')
-        .upload(fileName, decode(firmaBase64), { 
-          contentType: 'image/png',
-          upsert: true 
-        });
+        .upload(fileName, decode(firmaBase64), { contentType: 'image/png', upsert: true });
 
       if (uploadError) throw new Error("Error subiendo firma: " + uploadError.message);
 
-      // 4. Obtener URL pública de la firma
-      const { data: { publicUrl } } = supabase.storage
-        .from('firmas')
-        .getPublicUrl(fileName);
+      const { data: { publicUrl } } = supabase.storage.from('firmas').getPublicUrl(fileName);
 
-      // 5. Actualizar la orden con el link y cambiar estatus a "En Reparación"
       const { error: updateError } = await supabase
         .from('ordenes')
-        .update({ 
+        .update({
           estatus: 'En Reparación',
           fecha_autorizacion: new Date().toISOString(),
           firma_cliente_url: publicUrl
@@ -83,16 +70,9 @@ export default function PaginaAutorizacionPublica() {
 
       if (updateError) throw new Error("Error actualizando orden: " + updateError.message);
 
-      // 6. Notificar éxito
-      Alert.alert(
-        "¡Autorizado!", 
-        "Gracias por su confianza. Su reparación ha comenzado.",
-      );
-      setEnviadoConExito(true); // <--- Agregamos esto
-      fetchOrden(); 
+      setEnviadoConExito(true);
+      fetchOrden();
     } catch (error: any) {
-    
-      console.error("Fallo el proceso:", error);
       Alert.alert("Hubo un problema", error.message || "Inténtalo de nuevo.");
     } finally {
       setEnviando(false);
@@ -102,24 +82,14 @@ export default function PaginaAutorizacionPublica() {
   if (loading) return <ActivityIndicator size="large" style={{ marginTop: 100 }} color="#2563eb" />;
   if (!orden) return <Text style={styles.errorText}>Orden no encontrada o enlace expirado.</Text>;
 
-    // 1. Pantalla de ÉXITO (Se muestra solo tras enviar la firma)
   if (enviadoConExito) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 30 }]}>
-        <View style={{ backgroundColor: '#fff', padding: 40, borderRadius: 30, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 20, elevation: 5 }}>
+        <View style={styles.successCard}>
           <Text style={{ fontSize: 80, marginBottom: 20 }}>✅</Text>
-          <Text style={[styles.brand, { color: '#1e293b', fontSize: 28, textAlign: 'center' }]}>¡Autorizado!</Text>
-          <Text style={[styles.diagText, { textAlign: 'center', marginTop: 15, color: '#64748b' }]}>
-            Muchas gracias. Hemos recibido tu firma y el técnico ya está trabajando en tu equipo:
-          </Text>
-          <Text style={[styles.value, { marginTop: 10, color: '#2563eb' }]}>
-            {orden.equipos?.marca} - {orden.equipos?.identificador}
-          </Text>
-          
-          <TouchableOpacity 
-            style={[styles.btnConfirm, { marginTop: 40, width: '100%', backgroundColor: '#1e293b' }]} 
-            onPress={() => setEnviadoConExito(false)}
-          >
+          <Text style={styles.successTitle}>¡Autorizado!</Text>
+          <Text style={styles.successSubtitle}>Hemos recibido tu firma y el técnico ya está trabajando en tu equipo.</Text>
+          <TouchableOpacity style={styles.btnConfirm} onPress={() => setEnviadoConExito(false)}>
             <Text style={styles.btnTextAccept}>VOLVER A VER RESUMEN</Text>
           </TouchableOpacity>
         </View>
@@ -127,37 +97,31 @@ export default function PaginaAutorizacionPublica() {
     );
   }
 
-  // 2. Pantalla de la ORDEN (Tu código original con un pequeño ajuste)
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ alignItems: 'center' }}>
-      {/* HEADER */}
       <View style={styles.header}>
         <Text style={styles.brand}>MiTallerApp 🛠️</Text>
         <Text style={styles.folio}>FOLIO: #{id?.toString().slice(0, 8).toUpperCase()}</Text>
       </View>
 
       <View style={styles.main}>
-        {/* TARJETA DE RESUMEN */}
         <View style={styles.card}>
           <Text style={styles.label}>CLIENTE</Text>
           <Text style={styles.value}>{orden.equipos?.clientes?.nombre}</Text>
-          <View style={styles.divider} />
+          <div style={styles.divider} />
           <Text style={styles.label}>EQUIPO / VEHÍCULO</Text>
           <Text style={styles.value}>{orden.equipos?.marca} - {orden.equipos?.identificador}</Text>
         </View>
 
-        {/* DIAGNÓSTICO */}
         <View style={styles.card}>
           <Text style={[styles.label, { color: '#f97316' }]}>FALLA REPORTADA</Text>
           <Text style={styles.fallaText}>"{orden.falla_reportada}"</Text>
-          
           <Text style={[styles.label, { color: '#2563eb', marginTop: 15 }]}>DIAGNÓSTICO TÉCNICO</Text>
           <View style={styles.diagBox}>
             <Text style={styles.diagText}>{orden.diagnostico || "Pendiente de redactar por el técnico."}</Text>
           </View>
         </View>
 
-        {/* EVIDENCIAS FOTOGRÁFICAS */}
         <Text style={styles.labelSection}>FOTOS DE RECEPCIÓN</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.gallery}>
           {orden.fotos_recepcion?.map((url: string, i: number) => (
@@ -165,19 +129,30 @@ export default function PaginaAutorizacionPublica() {
           ))}
         </ScrollView>
 
-        {/* PRECIO DESTACADO */}
-        <View style={styles.priceCard}>
-          <Text style={styles.priceLabel}>PRESUPUESTO ESTIMADO</Text>
-          <Text style={styles.priceValue}>${orden.costo_total}</Text>
-          <Text style={styles.priceNote}>* Incluye refacciones y mano de obra.</Text>
-        </View>
+        {/* 1. MOSTRAR PRESUPUESTO SOLO SI NO ESTÁ ABIERTA */}
+        {orden.estatus !== 'Abierta' && (
+          <View style={styles.priceCard}>
+            <Text style={styles.priceLabel}>PRESUPUESTO ESTIMADO</Text>
+            <Text style={styles.priceValue}>${orden.costo_total}</Text>
+            <Text style={styles.priceNote}>* Incluye refacciones y mano de obra.</Text>
+          </View>
+        )}
 
-        {/* FLUJO DE FIRMA O ESTADO ACTUAL */}
-        {orden.estatus === 'En Reparación' || orden.estatus === 'Terminado' ? (
+        {/* 2. FLUJO DE FIRMA O ESTADO ACTUAL */}
+        {orden.estatus === 'Abierta' ? (
+          <View style={[styles.card, { backgroundColor: '#eff6ff', borderColor: '#2563eb', borderWidth: 1 }]}>
+            <Text style={{ color: '#1e40af', fontWeight: 'bold', textAlign: 'center', marginBottom: 10 }}>📝 ORDEN RECIBIDA</Text>
+            <Text style={{ color: '#1e40af', textAlign: 'center', fontSize: 13 }}>Estamos diagnosticando tu equipo. En cuanto tengamos el presupuesto listo, podrás autorizar la reparación desde este mismo enlace.</Text>
+            <TouchableOpacity 
+              style={[styles.btnConfirm, { marginTop: 25, backgroundColor: '#1e293b' }]} 
+              onPress={() => { if (typeof window !== 'undefined') window.close(); }}
+            >
+              <Text style={styles.btnTextAccept}>SALIR</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (orden.estatus === 'En Reparación' || orden.estatus === 'Terminado') ? (
           <View style={[styles.card, { backgroundColor: '#f0fdf4', borderColor: '#10b981', borderWidth: 1 }]}>
-            <Text style={{ color: '#166534', fontWeight: 'bold', textAlign: 'center' }}>
-              ✓ ESTA ORDEN YA FUE AUTORIZADA
-            </Text>
+            <Text style={{ color: '#166534', fontWeight: 'bold', textAlign: 'center' }}>✓ ESTA ORDEN YA FUE AUTORIZADA</Text>
           </View>
         ) : !showSignature ? (
           <View style={styles.actionRow}>
@@ -192,10 +167,7 @@ export default function PaginaAutorizacionPublica() {
           <View style={styles.signatureWrapper}>
             <Text style={styles.signTitle}>FIRME CON SU DEDO EN EL CUADRO:</Text>
             <View style={styles.canvasContainer}>
-              <SignatureCanvas 
-                ref={sigCanvas}
-                canvasProps={{ style: { width: '100%', height: 200, backgroundColor: '#fdfdfd' } }} 
-              />
+              <SignatureCanvas ref={sigCanvas} canvasProps={{ style: { width: '100%', height: 200, backgroundColor: '#fdfdfd' } }} />
             </View>
             <View style={styles.actionRow}>
               <TouchableOpacity onPress={() => setShowSignature(false)} style={{ flex: 1 }}>
@@ -211,7 +183,6 @@ export default function PaginaAutorizacionPublica() {
       <View style={{ height: 60 }} />
     </ScrollView>
   );
-
 }
 
 const styles = StyleSheet.create({
@@ -221,6 +192,9 @@ const styles = StyleSheet.create({
   folio: { color: '#94a3b8', fontSize: 11, marginTop: 5, fontWeight: 'bold' },
   main: { padding: 16, width: '100%', maxWidth: 500 },
   card: { backgroundColor: '#fff', padding: 20, borderRadius: 20, marginBottom: 15, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
+  successCard: { backgroundColor: '#fff', padding: 40, borderRadius: 30, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 20, elevation: 5 },
+  successTitle: { color: '#1e293b', fontSize: 28, fontWeight: 'bold', textAlign: 'center' },
+  successSubtitle: { textAlign: 'center', marginTop: 15, color: '#64748b', fontSize: 15 },
   label: { fontSize: 10, fontWeight: 'bold', color: '#94a3b8', marginBottom: 5 },
   labelSection: { fontSize: 10, fontWeight: 'bold', color: '#64748b', marginLeft: 10, marginBottom: 10 },
   value: { fontSize: 18, fontWeight: '700', color: '#1e293b' },
@@ -236,8 +210,8 @@ const styles = StyleSheet.create({
   priceNote: { color: '#475569', fontSize: 9, marginTop: 8 },
   actionRow: { flexDirection: 'row', gap: 12, marginTop: 10, alignItems: 'center' },
   btnReject: { flex: 1, padding: 18, borderRadius: 18, borderWidth: 2, borderColor: '#ef4444', alignItems: 'center' },
-  btnAccept: { flex: 2, padding: 18, borderRadius: 18, backgroundColor: '#10b981', alignItems: 'center', shadowColor: '#10b981', shadowOpacity: 0.3, shadowRadius: 10, elevation: 5 },
-  btnConfirm: { flex: 2, padding: 18, borderRadius: 18, backgroundColor: '#2563eb', alignItems: 'center' },
+  btnAccept: { flex: 2, padding: 18, borderRadius: 18, backgroundColor: '#10b981', alignItems: 'center' },
+  btnConfirm: { padding: 18, borderRadius: 18, backgroundColor: '#2563eb', alignItems: 'center', width: '100%' },
   btnTextReject: { color: '#ef4444', fontWeight: 'bold' },
   btnTextAccept: { color: '#fff', fontWeight: 'bold', fontSize: 15 },
   signatureWrapper: { backgroundColor: '#fff', padding: 20, borderRadius: 25, borderWidth: 2, borderColor: '#10b981' },
