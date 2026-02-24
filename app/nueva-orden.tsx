@@ -33,25 +33,27 @@ export default function NuevaOrdenScreen() {
 
   const empresa_id = '0a972b41-d2cd-4578-ad04-e32a84d856f7'; 
 
-  // --- FUNCIÓN PARA TOMAR FOTO (MULTIPLE) ---
+    // --- FUNCIÓN PARA TOMAR FOTO (OPTIMIZADA) ---
   const tomarFoto = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') return Alert.alert("Error", "Sin acceso a cámara");
 
     const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      quality: 0.4, // Calidad optimizada para subida múltiple
+      mediaTypes: ['images'], 
+      allowsEditing: false, // 👈 CAMBIO CLAVE: Desactivamos el editor para ahorrar RAM
+      quality: 0.3,         // 👈 Bajamos un pelín más la calidad (0.3 es ideal para evidencia)
       base64: true,
     });
 
     if (!result.canceled) {
+      // Agregamos la nueva foto al arreglo existente
       setFotosUris([...fotosUris, result.assets[0].uri]);
       if (result.assets[0].base64) {
         setFotosBase64([...fotosBase64, result.assets[0].base64]);
       }
     }
   };
+
 
   // --- FUNCIÓN PARA SUBIR TODA LA GALERÍA ---
   async function subirTodasLasFotos(): Promise<string[]> {
@@ -170,7 +172,7 @@ export default function NuevaOrdenScreen() {
         <ScrollView horizontal style={styles.galeria}>
           {fotosUris.map((uri, index) => (
             <View key={index} style={styles.fotoContainer}>
-              <Image source={{ uri }} style={styles.thumbnail} />
+              <Image source={{ uri }} style={styles.thumbnail} resizeMode="cover" />
               <TouchableOpacity style={styles.removeBadge} onPress={() => {
                 setFotosUris(fotosUris.filter((_, i) => i !== index));
                 setFotosBase64(fotosBase64.filter((_, i) => i !== index));
