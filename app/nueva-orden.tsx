@@ -69,7 +69,7 @@ export default function NuevaOrdenScreen() {
   
   // --- 3. FUNCIÓN WHATSAPP DE RECEPCIÓN (NUEVA FUNCIÓN) ---
   const enviarWhatsAppDeRecepcion = (clienteNombre: string, clienteTel: string, equipoMarca: string, ordenId: string) => {
-    const urlAprobacion = `https://mi-taller-app-beta.vercel.app/${ordenId}`;
+    const urlAprobacion = `https://mi-taller-app-beta.vercel.app/orden/${ordenId}`;    
     const mensaje = `Hola *${clienteNombre}* 👋, hemos recibido su *${equipoMarca}* con éxito.\n\n` +
       `*Orden:* #${ordenId.slice(0, 8)}\n` +
       `*Falla:* ${falla}\n\n` +
