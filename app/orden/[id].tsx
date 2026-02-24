@@ -1,8 +1,9 @@
+import { decode } from 'base64-arraybuffer'; // Importación vital para la firma
 import { useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import SignatureCanvas from 'react-signature-canvas';
-import { supabase } from '../../supabase'; // Verifica que la ruta a tu archivo supabase.ts sea correcta
+import { supabase } from '../../supabase';
 
 export default function PaginaAutorizacionPublica() {
   const { id } = useLocalSearchParams();
@@ -39,32 +40,59 @@ export default function PaginaAutorizacionPublica() {
   }
 
   const handleAutorizar = async () => {
-    if (sigCanvas.current.isEmpty()) {
-      return alert("Por favor, firma en el recuadro antes de continuar.");
+    // Validar que el canvas no esté vacío
+    if (!sigCanvas.current || sigCanvas.current.isEmpty()) {
+      return Alert.alert("Firma requerida", "Por favor, firme en el recuadro antes de enviar.");
     }
 
     setEnviando(true);
     
-    // 1. Obtener la firma (puedes guardarla en Storage después, por ahora actualizamos estatus)
-    // const firmaBase64 = sigCanvas.current.getTrimmedCanvas().toDataURL('image/png');
+    try {
+      // 1. Obtener la firma del canvas y limpiar el prefijo base64
+      const firmaBase64Raw = sigCanvas.current.getTrimmedCanvas().toDataURL('image/png');
+      const firmaBase64 = firmaBase64Raw.replace('data:image/png;base64,', '');
+      
+      // 2. Nombre del archivo único
+      const fileName = `firma_${id}_${Date.now()}.png`;
 
-    // 2. Actualizar la orden en Supabase
-    const { error } = await supabase
-      .from('ordenes')
-      .update({ 
-        estatus: 'En Reparación', // El técnico recibe la señal de inicio
-        fecha_autorizacion: new Date().toISOString()
-      })
-      .eq('id', id);
+      // 3. Subir imagen al Bucket 'firmas'
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('firmas')
+        .upload(fileName, decode(firmaBase64), { 
+          contentType: 'image/png',
+          upsert: true 
+        });
 
-    setEnviando(false);
+      if (uploadError) throw new Error("Error subiendo firma: " + uploadError.message);
 
-    if (error) {
-      alert("Error al procesar: " + error.message);
-    } else {
-      Alert.alert("¡Autorizado!", "Gracias por su confianza. Su reparación ha comenzado.");
-      setShowSignature(false);
-      fetchOrden(); // Refresca para mostrar el nuevo estatus
+      // 4. Obtener URL pública de la firma
+      const { data: { publicUrl } } = supabase.storage
+        .from('firmas')
+        .getPublicUrl(fileName);
+
+      // 5. Actualizar la orden con el link y cambiar estatus a "En Reparación"
+      const { error: updateError } = await supabase
+        .from('ordenes')
+        .update({ 
+          estatus: 'En Reparación',
+          fecha_autorizacion: new Date().toISOString(),
+          firma_cliente_url: publicUrl
+        })
+        .eq('id', id);
+
+      if (updateError) throw new Error("Error actualizando orden: " + updateError.message);
+
+      // 6. Notificar éxito
+      Alert.alert(
+        "¡Autorizado!", 
+        "Gracias por su confianza. Su reparación ha comenzado.",
+      );
+
+    } catch (error: any) {
+      console.error("Fallo el proceso:", error);
+      Alert.alert("Hubo un problema", error.message || "Inténtalo de nuevo.");
+    } finally {
+      setEnviando(false);
     }
   };
 
@@ -84,7 +112,7 @@ export default function PaginaAutorizacionPublica() {
         <View style={styles.card}>
           <Text style={styles.label}>CLIENTE</Text>
           <Text style={styles.value}>{orden.equipos?.clientes?.nombre}</Text>
-          <View style={styles.divider} />
+          <div style={styles.divider} />
           <Text style={styles.label}>EQUIPO / VEHÍCULO</Text>
           <Text style={styles.value}>{orden.equipos?.marca} - {orden.equipos?.identificador}</Text>
         </View>
