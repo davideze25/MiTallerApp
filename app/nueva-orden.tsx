@@ -1,18 +1,18 @@
 import { decode } from 'base64-arraybuffer';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react'; // Agregamos useEffect
 import { Alert, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { supabase } from '../supabase';
 
 export default function NuevaOrdenScreen() {
   const router = useRouter();
-  
+
   // Control de estados
   const [sugerencias, setSugerencias] = useState<any[]>([]);
   const [clienteIdExistente, setClienteIdExistente] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
-
+  
   // --- ESTADOS PARA MULTIPLE FOTOS ---
   const [fotosUris, setFotosUris] = useState<string[]>([]);
   const [fotosBase64, setFotosBase64] = useState<string[]>([]);
@@ -22,49 +22,75 @@ export default function NuevaOrdenScreen() {
   const [telefono, setTelefono] = useState('');
   const [direccion, setDireccion] = useState('');
   const [email, setEmail] = useState('');
-  
+
   // Datos del Equipo
   const [identificador, setIdentificador] = useState('');
   const [marca, setMarca] = useState('');
-  
+
   // Datos de la Recepción
   const [falla, setFalla] = useState('');
   const [medicion, setMedicion] = useState('');
+  const empresa_id = '0a972b41-d2cd-4578-ad04-e32a84d856f7';
 
-  const empresa_id = '0a972b41-d2cd-4578-ad04-e32a84d856f7'; 
+  // --- SOLUCIÓN PARA ANDROID CRASH (Recuperar foto si la app se reinició) ---
+    useEffect(() => {
+      const revisarFotoPerdida = async () => {
+        // 1. Obtenemos el resultado
+        const result = await ImagePicker.getPendingResultAsync();
 
-    // --- FUNCIÓN PARA TOMAR FOTO (OPTIMIZADA) ---
+        // 2. Validamos explícitamente que sea un arreglo (Array.isArray)
+        // Esto quita el error del iterador y del .length
+        if (result && Array.isArray(result) && result.length > 0) {
+          
+          for (const pickerResult of result) {
+            // 3. Verificamos que no haya error ni cancelación
+            if (!pickerResult.canceled && pickerResult.assets && pickerResult.assets.length > 0) {
+              const asset = pickerResult.assets[0]; // Tomamos el primer asset del resultado
+              
+              setFotosUris((prev) => [...prev, asset.uri]);
+              
+              if (asset.base64) {
+                setFotosBase64((prev) => [...prev, asset.base64!]);
+              }
+            }
+          }
+        }
+      };
+      revisarFotoPerdida();
+    }, []);
+
+
+
+
+  // --- FUNCIÓN PARA TOMAR FOTO (OPTIMIZADA) ---
   const tomarFoto = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') return Alert.alert("Error", "Sin acceso a cámara");
 
     const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'], 
-      allowsEditing: false, // 👈 CAMBIO CLAVE: Desactivamos el editor para ahorrar RAM
-      quality: 0.3,         // 👈 Bajamos un pelín más la calidad (0.3 es ideal para evidencia)
+      mediaTypes: ['images'],
+      allowsEditing: false, // Desactivado para evitar crash por memoria
+      quality: 0.3,         // Calidad optimizada
       base64: true,
     });
 
-    if (!result.canceled) {
-      // Agregamos la nueva foto al arreglo existente
-      setFotosUris([...fotosUris, result.assets[0].uri]);
+    if (!result.canceled && result.assets) {
+      setFotosUris((prev) => [...prev, result.assets[0].uri]);
       if (result.assets[0].base64) {
-        setFotosBase64([...fotosBase64, result.assets[0].base64]);
+        setFotosBase64((prev) => [...prev, result.assets[0].base64!]);
       }
     }
   };
 
-
   // --- FUNCIÓN PARA SUBIR TODA LA GALERÍA ---
   async function subirTodasLasFotos(): Promise<string[]> {
     const urlsPublicas: string[] = [];
-    
     for (const b64 of fotosBase64) {
       const fileName = `recepcion_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
       const { data, error } = await supabase.storage
         .from('evidencias')
         .upload(fileName, decode(b64), { contentType: 'image/jpeg' });
-
+      
       if (!error) {
         const { data: urlData } = supabase.storage.from('evidencias').getPublicUrl(fileName);
         urlsPublicas.push(urlData.publicUrl);
@@ -86,8 +112,8 @@ export default function NuevaOrdenScreen() {
   }
 
   const seleccionarCliente = (c: any) => {
-    setNombre(c.nombre); setTelefono(c.telefono); setDireccion(c.direccion || ''); setEmail(c.email || '');
-    setClienteIdExistente(c.id); setSugerencias([]);
+    setNombre(c.nombre); setTelefono(c.telefono); setDireccion(c.direccion || '');
+    setEmail(c.email || ''); setClienteIdExistente(c.id); setSugerencias([]);
   };
 
   // --- GUARDADO FINAL ---
@@ -95,17 +121,16 @@ export default function NuevaOrdenScreen() {
     if (!nombre || !telefono || !identificador) {
       return Alert.alert("Faltan datos", "Nombre, Teléfono e ID del Equipo son obligatorios.");
     }
-
     setCargando(true);
     let finalClienteId = clienteIdExistente;
 
-    // 1. SUBIR TODAS LAS FOTOS PRIMERO
+    // 1. SUBIR FOTOS
     const linksDeFotos = await subirTodasLasFotos();
 
     // 2. CLIENTE (Si es nuevo)
     if (!finalClienteId) {
       const { data: nuevoCliente, error: errCliente } = await supabase
-        .from('clientes').insert([{ nombre, telefono, direccion, email, empresa_id }]).select().single();       
+        .from('clientes').insert([{ nombre, telefono, direccion, email, empresa_id }]).select().single();
       if (errCliente) { setCargando(false); return Alert.alert("Error Cliente", errCliente.message); }
       finalClienteId = nuevoCliente.id;
     }
@@ -115,21 +140,21 @@ export default function NuevaOrdenScreen() {
       .from('equipos').insert([{ identificador, marca, cliente_id: finalClienteId, empresa_id }]).select().single();
     if (errEquipo) { setCargando(false); return Alert.alert("Error Equipo", errEquipo.message); }
 
-    // 4. ORDEN (Con el arreglo de fotos)
+    // 4. ORDEN
     const { error: errOrden } = await supabase
-      .from('ordenes').insert([{ 
-        equipo_id: equipo.id, 
-        medicion_entrada: parseInt(medicion) || 0, 
+      .from('ordenes').insert([{
+        equipo_id: equipo.id,
+        medicion_entrada: parseInt(medicion) || 0,
         falla_reportada: falla,
         estatus: 'Abierta',
         empresa_id: empresa_id,
-        fotos_recepcion: linksDeFotos // Se guardan todos los links []
+        fotos_recepcion: linksDeFotos
       }]);
 
     setCargando(false);
     if (errOrden) Alert.alert("Error Orden", errOrden.message);
     else {
-      Alert.alert("✅ ¡ORDEN CREADA!", `Se guardaron ${linksDeFotos.length} fotos de evidencia.`);
+      Alert.alert("✅ ¡ORDEN CREADA!", `Se guardaron ${linksDeFotos.length} fotos.`);
       setNombre(''); setTelefono(''); setIdentificador(''); setMarca(''); setMedicion(''); setFalla('');
       setClienteIdExistente(null); setFotosUris([]); setFotosBase64([]);
     }
@@ -137,38 +162,41 @@ export default function NuevaOrdenScreen() {
 
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.title}>🛠️ Recepción de Equipo</Text>
-      
-      {/* SECCIÓN CLIENTE */}
+      <Text style={styles.title}>📋 Recepción de Equipo</Text>
+
       <View style={styles.section}>
-        <View style={styles.row}><Text style={styles.label}>DATOS DEL DUEÑO</Text>
-        <TouchableOpacity onPress={() => router.push('/clientes')} style={styles.addBtn}><Text style={styles.addBtnText}>+ NUEVO</Text></TouchableOpacity></View>
-        <TextInput style={styles.input} placeholder="📱 Teléfono (Buscar...)" value={telefono} onChangeText={buscarCliente} keyboardType="phone-pad" />
+        <View style={styles.row}>
+          <Text style={styles.label}>DATOS DEL DUEÑO</Text>
+          <TouchableOpacity onPress={() => router.push('/clientes')} style={styles.addBtn}>
+            <Text style={styles.addBtnText}>+ NUEVO</Text>
+          </TouchableOpacity>
+        </View>
+        <TextInput style={styles.input} placeholder="🔍 Teléfono (Buscar...)" value={telefono} onChangeText={buscarCliente} keyboardType="phone-pad" />
         {sugerencias.map((c) => (
-            <TouchableOpacity key={c.id} style={styles.suggestion} onPress={() => seleccionarCliente(c)}>
-            <Text style={styles.suggestionName}>{c.nombre}</Text><Text style={styles.suggestionPhone}>📞 {c.telefono}</Text>
-            </TouchableOpacity>
+          <TouchableOpacity key={c.id} style={styles.suggestion} onPress={() => seleccionarCliente(c)}>
+            <Text style={styles.suggestionName}>{c.nombre}</Text>
+            <Text style={styles.suggestionPhone}>📞 {c.telefono}</Text>
+          </TouchableOpacity>
         ))}
         <TextInput style={[styles.input, clienteIdExistente && styles.inputDisabled]} placeholder="👤 Nombre" value={nombre} onChangeText={setNombre} editable={!clienteIdExistente} />
-        <TextInput style={[styles.input, clienteIdExistente && styles.inputDisabled]} placeholder="📧 Email" value={email} onChangeText={setEmail} editable={!clienteIdExistente} />
-        <TextInput style={[styles.input, clienteIdExistente && styles.inputDisabled]} placeholder="🏠 Dirección" value={direccion} onChangeText={setDireccion} editable={!clienteIdExistente} multiline />
-        {clienteIdExistente && <TouchableOpacity onPress={() => {setClienteIdExistente(null); setNombre(''); setTelefono(''); setDireccion(''); setEmail('');}}><Text style={styles.resetText}>✕ Cambiar Cliente</Text></TouchableOpacity>}
+        {clienteIdExistente && (
+          <TouchableOpacity onPress={() => {setClienteIdExistente(null); setNombre(''); setTelefono(''); setDireccion(''); setEmail('');}}>
+            <Text style={styles.resetText}>✕ Cambiar Cliente</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
-      {/* SECCIÓN EQUIPO */}
       <View style={styles.section}>
         <Text style={styles.label}>DATOS DEL APARATO / VEHÍCULO</Text>
         <TextInput style={styles.input} placeholder="ID (Placas, Serie, IMEI)" value={identificador} onChangeText={setIdentificador} />
         <TextInput style={styles.input} placeholder="Marca y Modelo" value={marca} onChangeText={setMarca} />
       </View>
 
-      {/* SECCIÓN RECEPCIÓN Y GALERÍA */}
       <View style={styles.section}>
         <Text style={styles.label}>ESTADO DE ENTRADA Y EVIDENCIAS</Text>
         <TextInput style={styles.input} placeholder="Medición (KM, Ciclos, Horas)" keyboardType="numeric" value={medicion} onChangeText={setMedicion} />
         <TextInput style={[styles.input, {height: 60}]} placeholder="Falla reportada" multiline value={falla} onChangeText={setFalla} />
-        
-        {/* VISTA PREVIA DE FOTOS TOMADAS */}
+
         <ScrollView horizontal style={styles.galeria}>
           {fotosUris.map((uri, index) => (
             <View key={index} style={styles.fotoContainer}>
@@ -182,7 +210,6 @@ export default function NuevaOrdenScreen() {
             </View>
           ))}
         </ScrollView>
-
         <TouchableOpacity style={styles.fotoBtn} onPress={tomarFoto}>
           <Text style={styles.fotoBtnText}>📸 TOMAR FOTO DE EVIDENCIA</Text>
         </TouchableOpacity>
@@ -209,7 +236,6 @@ const styles = StyleSheet.create({
   suggestionName: { fontWeight: 'bold', color: '#2c3e50' },
   suggestionPhone: { fontSize: 12, color: '#7f8c8d' },
   resetText: { color: '#e74c3c', fontSize: 12, textAlign: 'right', marginTop: 5 },
-  // Estilos de Galería
   galeria: { flexDirection: 'row', marginBottom: 15, paddingVertical: 5 },
   fotoContainer: { marginRight: 12, position: 'relative' },
   thumbnail: { width: 90, height: 90, borderRadius: 10, backgroundColor: '#eee' },
