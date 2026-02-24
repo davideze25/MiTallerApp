@@ -12,6 +12,7 @@ export default function PaginaAutorizacionPublica() {
   const [showSignature, setShowSignature] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const sigCanvas = useRef<any>(null);
+  const [enviadoConExito, setEnviadoConExito] = useState(false);
 
   useEffect(() => {
     if (id) fetchOrden();
@@ -87,8 +88,10 @@ export default function PaginaAutorizacionPublica() {
         "¡Autorizado!", 
         "Gracias por su confianza. Su reparación ha comenzado.",
       );
-
+      setEnviadoConExito(true); // <--- Agregamos esto
+      fetchOrden(); 
     } catch (error: any) {
+    
       console.error("Fallo el proceso:", error);
       Alert.alert("Hubo un problema", error.message || "Inténtalo de nuevo.");
     } finally {
@@ -99,6 +102,32 @@ export default function PaginaAutorizacionPublica() {
   if (loading) return <ActivityIndicator size="large" style={{ marginTop: 100 }} color="#2563eb" />;
   if (!orden) return <Text style={styles.errorText}>Orden no encontrada o enlace expirado.</Text>;
 
+    // 1. Pantalla de ÉXITO (Se muestra solo tras enviar la firma)
+  if (enviadoConExito) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 30 }]}>
+        <View style={{ backgroundColor: '#fff', padding: 40, borderRadius: 30, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 20, elevation: 5 }}>
+          <Text style={{ fontSize: 80, marginBottom: 20 }}>✅</Text>
+          <Text style={[styles.brand, { color: '#1e293b', fontSize: 28, textAlign: 'center' }]}>¡Autorizado!</Text>
+          <Text style={[styles.diagText, { textAlign: 'center', marginTop: 15, color: '#64748b' }]}>
+            Muchas gracias. Hemos recibido tu firma y el técnico ya está trabajando en tu equipo:
+          </Text>
+          <Text style={[styles.value, { marginTop: 10, color: '#2563eb' }]}>
+            {orden.equipos?.marca} - {orden.equipos?.identificador}
+          </Text>
+          
+          <TouchableOpacity 
+            style={[styles.btnConfirm, { marginTop: 40, width: '100%', backgroundColor: '#1e293b' }]} 
+            onPress={() => setEnviadoConExito(false)}
+          >
+            <Text style={styles.btnTextAccept}>VOLVER A VER RESUMEN</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // 2. Pantalla de la ORDEN (Tu código original con un pequeño ajuste)
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ alignItems: 'center' }}>
       {/* HEADER */}
@@ -112,7 +141,7 @@ export default function PaginaAutorizacionPublica() {
         <View style={styles.card}>
           <Text style={styles.label}>CLIENTE</Text>
           <Text style={styles.value}>{orden.equipos?.clientes?.nombre}</Text>
-          <div style={styles.divider} />
+          <View style={styles.divider} />
           <Text style={styles.label}>EQUIPO / VEHÍCULO</Text>
           <Text style={styles.value}>{orden.equipos?.marca} - {orden.equipos?.identificador}</Text>
         </View>
@@ -143,8 +172,14 @@ export default function PaginaAutorizacionPublica() {
           <Text style={styles.priceNote}>* Incluye refacciones y mano de obra.</Text>
         </View>
 
-        {/* FLUJO DE FIRMA */}
-        {!showSignature ? (
+        {/* FLUJO DE FIRMA O ESTADO ACTUAL */}
+        {orden.estatus === 'En Reparación' || orden.estatus === 'Terminado' ? (
+          <View style={[styles.card, { backgroundColor: '#f0fdf4', borderColor: '#10b981', borderWidth: 1 }]}>
+            <Text style={{ color: '#166534', fontWeight: 'bold', textAlign: 'center' }}>
+              ✓ ESTA ORDEN YA FUE AUTORIZADA
+            </Text>
+          </View>
+        ) : !showSignature ? (
           <View style={styles.actionRow}>
             <TouchableOpacity style={styles.btnReject} onPress={() => alert("Solicitud de aclaración enviada.")}>
               <Text style={styles.btnTextReject}>RECHAZAR</Text>
@@ -176,6 +211,7 @@ export default function PaginaAutorizacionPublica() {
       <View style={{ height: 60 }} />
     </ScrollView>
   );
+
 }
 
 const styles = StyleSheet.create({
