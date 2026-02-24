@@ -1,7 +1,8 @@
+import AsyncStorage from '@react-native-async-storage/async-storage'; // Importamos AsyncStorage
 import { decode } from 'base64-arraybuffer';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react'; // Agregamos useEffect
+import React, { useEffect, useState } from 'react';
 import { Alert, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { supabase } from '../supabase';
 
@@ -32,52 +33,59 @@ export default function NuevaOrdenScreen() {
   const [medicion, setMedicion] = useState('');
   const empresa_id = '0a972b41-d2cd-4578-ad04-e32a84d856f7';
 
-  // --- SOLUCIÓN PARA ANDROID CRASH (Recuperar foto si la app se reinició) ---
-    useEffect(() => {
-      const revisarFotoPerdida = async () => {
-        // 1. Obtenemos el resultado
-        const result = await ImagePicker.getPendingResultAsync();
-
-        // 2. Validamos explícitamente que sea un arreglo (Array.isArray)
-        // Esto quita el error del iterador y del .length
-        if (result && Array.isArray(result) && result.length > 0) {
-          
-          for (const pickerResult of result) {
-            // 3. Verificamos que no haya error ni cancelación
-            if (!pickerResult.canceled && pickerResult.assets && pickerResult.assets.length > 0) {
-              const asset = pickerResult.assets[0]; // Tomamos el primer asset del resultado
-              
-              setFotosUris((prev) => [...prev, asset.uri]);
-              
-              if (asset.base64) {
-                setFotosBase64((prev) => [...prev, asset.base64!]);
-              }
+  // --- 1. RECUPERACIÓN DE DATOS (POR SI LA APP MURIÓ) ---
+  useEffect(() => {
+    const recuperarTodo = async () => {
+      // A. Recuperar fotos perdidas por el crash de la cámara
+      const pending = await ImagePicker.getPendingResultAsync();
+      if (pending && Array.isArray(pending) && pending.length > 0) {
+        for (const res of pending) {
+          if (!res.canceled && res.assets && res.assets.length > 0) {
+            setFotosUris(prev => [...prev, res.assets[0].uri]);
+            if (res.assets[0].base64) {
+              setFotosBase64(prev => [...prev, res.assets[0].base64!]);
             }
           }
         }
-      };
-      revisarFotoPerdida();
-    }, []);
+      }
 
+      // B. Recuperar borrador del formulario de AsyncStorage
+      const borrador = await AsyncStorage.getItem('borrador_orden');
+      if (borrador) {
+        const d = JSON.parse(borrador);
+        setNombre(d.nombre || ''); setTelefono(d.telefono || ''); setDireccion(d.direccion || '');
+        setEmail(d.email || ''); setIdentificador(d.identificador || ''); setMarca(d.marca || '');
+        setFalla(d.falla || ''); setMedicion(d.medicion || '');
+        setClienteIdExistente(d.clienteIdExistente || null);
+      }
+    };
+    recuperarTodo();
+  }, []);
 
+  // --- 2. GUARDADO AUTOMÁTICO DE BORRADOR ---
+  useEffect(() => {
+    const guardarBorrador = async () => {
+      const datos = { nombre, telefono, direccion, email, identificador, marca, falla, medicion, clienteIdExistente };
+      await AsyncStorage.setItem('borrador_orden', JSON.stringify(datos));
+    };
+    guardarBorrador();
+  }, [nombre, telefono, direccion, email, identificador, marca, falla, medicion, clienteIdExistente]);
 
 
   // --- FUNCIÓN PARA TOMAR FOTO (OPTIMIZADA) ---
   const tomarFoto = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') return Alert.alert("Error", "Sin acceso a cámara");
-
     const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
+      mediaTypes: ['images'], 
       allowsEditing: false, // Desactivado para evitar crash por memoria
       quality: 0.3,         // Calidad optimizada
       base64: true,
     });
-
-    if (!result.canceled && result.assets) {
-      setFotosUris((prev) => [...prev, result.assets[0].uri]);
-      if (result.assets[0].base64) {
-        setFotosBase64((prev) => [...prev, result.assets[0].base64!]);
+    if (!result.canceled && result.assets) { 
+      setFotosUris((prev) => [...prev, result.assets[0].uri]); 
+      if (result.assets[0].base64) { 
+        setFotosBase64((prev) => [...prev, result.assets[0].base64!]); 
       }
     }
   };
@@ -122,41 +130,49 @@ export default function NuevaOrdenScreen() {
       return Alert.alert("Faltan datos", "Nombre, Teléfono e ID del Equipo son obligatorios.");
     }
     setCargando(true);
-    let finalClienteId = clienteIdExistente;
+    try {
+      let finalClienteId = clienteIdExistente;
 
-    // 1. SUBIR FOTOS
-    const linksDeFotos = await subirTodasLasFotos();
+      // 1. SUBIR FOTOS
+      const linksDeFotos = await subirTodasLasFotos();
 
-    // 2. CLIENTE (Si es nuevo)
-    if (!finalClienteId) {
-      const { data: nuevoCliente, error: errCliente } = await supabase
-        .from('clientes').insert([{ nombre, telefono, direccion, email, empresa_id }]).select().single();
-      if (errCliente) { setCargando(false); return Alert.alert("Error Cliente", errCliente.message); }
-      finalClienteId = nuevoCliente.id;
-    }
+      // 2. CLIENTE (Si es nuevo)
+      if (!finalClienteId) {
+        const { data: nuevoCliente, error: errCliente } = await supabase
+          .from('clientes').insert([{ nombre, telefono, direccion, email, empresa_id }]).select().single();
+        if (errCliente) throw errCliente;
+        finalClienteId = nuevoCliente.id;
+      }
 
-    // 3. EQUIPO
-    const { data: equipo, error: errEquipo } = await supabase
-      .from('equipos').insert([{ identificador, marca, cliente_id: finalClienteId, empresa_id }]).select().single();
-    if (errEquipo) { setCargando(false); return Alert.alert("Error Equipo", errEquipo.message); }
+      // 3. EQUIPO
+      const { data: equipo, error: errEquipo } = await supabase
+        .from('equipos').insert([{ identificador, marca, cliente_id: finalClienteId, empresa_id }]).select().single();
+      if (errEquipo) throw errEquipo;
 
-    // 4. ORDEN
-    const { error: errOrden } = await supabase
-      .from('ordenes').insert([{
-        equipo_id: equipo.id,
-        medicion_entrada: parseInt(medicion) || 0,
-        falla_reportada: falla,
-        estatus: 'Abierta',
-        empresa_id: empresa_id,
-        fotos_recepcion: linksDeFotos
-      }]);
+      // 4. ORDEN
+      const { error: errOrden } = await supabase
+        .from('ordenes').insert([{
+          equipo_id: equipo.id,
+          medicion_entrada: parseInt(medicion) || 0,
+          falla_reportada: falla,
+          estatus: 'Abierta',
+          empresa_id: empresa_id,
+          fotos_recepcion: linksDeFotos
+        }]);
+      if (errOrden) throw errOrden;
+      
+      // 5. LIMPIAR BORRADOR TRAS ÉXITO
+      await AsyncStorage.removeItem('borrador_orden');
 
-    setCargando(false);
-    if (errOrden) Alert.alert("Error Orden", errOrden.message);
-    else {
       Alert.alert("✅ ¡ORDEN CREADA!", `Se guardaron ${linksDeFotos.length} fotos.`);
+      // Limpiar estados locales para un nuevo formulario
       setNombre(''); setTelefono(''); setIdentificador(''); setMarca(''); setMedicion(''); setFalla('');
       setClienteIdExistente(null); setFotosUris([]); setFotosBase64([]);
+      
+    } catch (error: any) {
+      Alert.alert("Error", error.message);
+    } finally {
+      setCargando(false);
     }
   }
 
